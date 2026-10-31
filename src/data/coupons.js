@@ -1,0 +1,38 @@
+export const coupons = [
+  {
+    id: "c1",
+    code: "WELCOME10",
+    discountType: "Percentage",
+    discountValue: 10,
+    minOrder: 5000,
+    expiry: "2026-12-31",
+    status: "Active",
+  },
+  {
+    id: "c2",
+    code: "FLAT500",
+    discountType: "Flat",
+    discountValue: 500,
+    minOrder: 10000,
+    expiry: "2026-11-15",
+    status: "Active",
+  },
+  {
+    id: "c3",
+    code: "FESTIVE20",
+    discountType: "Percentage",
+    discountValue: 20,
+    minOrder: 20000,
+    expiry: "2026-10-05",
+    status: "Active",
+  },
+  {
+    id: "c4",
+    code: "SUMMER25",
+    discountType: "Percentage",
+    discountValue: 25,
+    minOrder: 15000,
+    expiry: "2026-06-30",
+    status: "Expired",
+  },
+];
