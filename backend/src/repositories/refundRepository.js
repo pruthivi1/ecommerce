@@ -25,7 +25,15 @@ export async function getRefundById(id) {
   return rows[0] || null;
 }
 
+export async function getRefundByVendorOrderId(vendorOrderId) {
+  const rows = await query("SELECT * FROM refunds WHERE vendor_order_id = :vendorOrderId LIMIT 1", { vendorOrderId });
+  return rows[0] || null;
+}
+
 export async function createRefund({ orderId, vendorOrderId, buyerId, vendorId, amount, reason }) {
+  const existing = await getRefundByVendorOrderId(vendorOrderId);
+  if (existing) return existing;
+
   const id = newId();
   await query(
     `INSERT INTO refunds (id, order_id, vendor_order_id, buyer_id, vendor_id, amount, reason, status)
@@ -35,7 +43,10 @@ export async function createRefund({ orderId, vendorOrderId, buyerId, vendorId, 
   return getRefundById(id);
 }
 
-export async function setRefundStatus(id, status) {
-  await query("UPDATE refunds SET status = :status, decided_at = UTC_TIMESTAMP() WHERE id = :id", { id, status });
+export async function setRefundStatus(id, status, razorpayRefundId = null) {
+  await query(
+    "UPDATE refunds SET status = :status, razorpay_refund_id = COALESCE(:razorpayRefundId, razorpay_refund_id), decided_at = UTC_TIMESTAMP() WHERE id = :id",
+    { id, status, razorpayRefundId }
+  );
   return getRefundById(id);
 }

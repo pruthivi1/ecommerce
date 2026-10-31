@@ -1,7 +1,7 @@
 import * as payoutRepo from "../repositories/payoutRepository.js";
 import { AppError } from "../utils/AppError.js";
 import { notifyAdmins, notifyVendor } from "./notificationService.js";
-import { query } from "../config/db.js";
+import { withTransaction } from "../config/db.js";
 
 const VALID_TRANSITIONS = { Pending: ["Processing", "Rejected"], Processing: ["Completed", "Rejected"] };
 
@@ -13,20 +13,33 @@ export async function listPayouts(filters) {
  * A vendor may request a payout up to their current available balance —
  * computed here from completed sales minus commission minus prior
  * pending/processing/completed payouts, not a client-supplied figure.
+ * Protected against race conditions using a transactional row lock.
  */
 export async function requestPayout(vendor, amount) {
-  const [{ available }] = await query(
-    `SELECT
-       COALESCE((SELECT SUM(net_amount) FROM commission_ledger WHERE vendor_id = :vendorId), 0)
-       - COALESCE((SELECT SUM(amount) FROM payouts WHERE vendor_id = :vendorId AND status IN ('Pending','Processing','Completed')), 0)
-       AS available`,
-    { vendorId: vendor.id }
-  );
-  if (amount > Number(available)) {
-    throw AppError.badRequest(`Requested amount exceeds your available balance of ₹${Number(available).toLocaleString("en-IN")}.`, "INSUFFICIENT_BALANCE");
+  const numAmount = Number(amount);
+  if (!numAmount || numAmount <= 0 || !Number.isFinite(numAmount)) {
+    throw AppError.badRequest("Invalid payout amount.", "INVALID_AMOUNT");
   }
-  const payout = await payoutRepo.createPayout({ vendorId: vendor.id, amount });
-  await notifyAdmins({ title: "Payout requested", body: `A vendor requested a payout of ₹${amount.toLocaleString("en-IN")}.` });
+
+  const payout = await withTransaction(async (connection) => {
+    // Row-level lock on vendor to prevent concurrent balance draining
+    await connection.query("SELECT id FROM vendors WHERE id = :vendorId FOR UPDATE", { vendorId: vendor.id });
+
+    const [rows] = await connection.query(
+      `SELECT
+         COALESCE((SELECT SUM(net_amount) FROM commission_ledger WHERE vendor_id = :vendorId), 0)
+         - COALESCE((SELECT SUM(amount) FROM payouts WHERE vendor_id = :vendorId AND status IN ('Pending','Processing','Completed')), 0)
+         AS available`,
+      { vendorId: vendor.id }
+    );
+    const available = Number(rows[0]?.available ?? 0);
+    if (numAmount > available) {
+      throw AppError.badRequest(`Requested amount exceeds your available balance of ₹${available.toLocaleString("en-IN")}.`, "INSUFFICIENT_BALANCE");
+    }
+    return payoutRepo.createPayout({ vendorId: vendor.id, amount: numAmount }, connection);
+  });
+
+  await notifyAdmins({ title: "Payout requested", body: `Vendor requested a payout of ₹${numAmount.toLocaleString("en-IN")}.` });
   return payout;
 }
 

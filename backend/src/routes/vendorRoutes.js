@@ -29,6 +29,7 @@ router.patch("/notifications/read-all", vendorController.markAllNotificationsRea
 
 // Selling actions require an Approved, non-suspended vendor account.
 router.use(requireApprovedVendor);
+router.post("/upload-image", vendorController.uploadImage);
 router.post("/products", validateBody(createProductSchema), vendorController.createProduct);
 router.patch("/products/:id", validateBody(updateProductSchema), vendorController.updateProduct);
 router.patch("/products/:id/stock", validateBody(updateStockSchema), vendorController.updateStock);

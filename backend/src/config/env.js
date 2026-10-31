@@ -1,4 +1,12 @@
-import "dotenv/config";
+import dotenv from "dotenv";
+import path from "node:path";
+import fs from "node:fs";
+
+dotenv.config();
+const backendEnvPath = path.resolve(process.cwd(), "backend/.env");
+if (fs.existsSync(backendEnvPath)) {
+  dotenv.config({ path: backendEnvPath });
+}
 
 const REQUIRED_IN_ALL_ENVS = ["DATABASE_HOST", "DATABASE_NAME", "DATABASE_USER", "JWT_SECRET"];
 

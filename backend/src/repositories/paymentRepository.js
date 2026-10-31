@@ -1,14 +1,31 @@
 import { query } from "../config/db.js";
 import { newId } from "../utils/id.js";
 
-export async function createPayment(connection, { orderId, razorpayOrderId, amount, idempotencyKey }) {
+export async function createPayment(connection, { orderId, razorpayOrderId, amount, idempotencyKey, buyerId }) {
   const id = newId();
   await connection.query(
-    `INSERT INTO payments (id, order_id, razorpay_order_id, amount, status, idempotency_key)
-     VALUES (:id, :orderId, :razorpayOrderId, :amount, 'Created', :idempotencyKey)`,
-    { id, orderId, razorpayOrderId, amount, idempotencyKey: idempotencyKey || null }
+    `INSERT INTO payments (id, order_id, buyer_id, razorpay_order_id, amount, status, idempotency_key)
+     VALUES (:id, :orderId, :buyerId, :razorpayOrderId, :amount, 'Created', :idempotencyKey)`,
+    { id, orderId: orderId || null, buyerId: buyerId || null, razorpayOrderId, amount, idempotencyKey: idempotencyKey || null }
   );
   return id;
+}
+
+export async function createInitialPaymentIntent({ buyerId, razorpayOrderId, amount, idempotencyKey }) {
+  const id = newId();
+  await query(
+    `INSERT INTO payments (id, order_id, buyer_id, razorpay_order_id, amount, status, idempotency_key)
+     VALUES (:id, NULL, :buyerId, :razorpayOrderId, :amount, 'Created', :idempotencyKey)
+     ON DUPLICATE KEY UPDATE razorpay_order_id = VALUES(razorpay_order_id), amount = VALUES(amount)`,
+    { id, buyerId: buyerId || null, razorpayOrderId, amount, idempotencyKey: idempotencyKey || null }
+  );
+  return getPaymentByIdempotencyKey(idempotencyKey);
+}
+
+export async function getPaymentByRazorpayPaymentId(razorpayPaymentId) {
+  if (!razorpayPaymentId) return null;
+  const rows = await query("SELECT * FROM payments WHERE razorpay_payment_id = :razorpayPaymentId LIMIT 1", { razorpayPaymentId });
+  return rows[0] || null;
 }
 
 export async function getPaymentByIdempotencyKey(key) {

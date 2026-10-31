@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Minus, Plus, ShieldCheck, MapPin, Star, FileText, ShoppingCart, PackageX } from "lucide-react";
 import Container from "../../components/common/Container.jsx";

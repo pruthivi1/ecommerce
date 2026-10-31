@@ -21,7 +21,7 @@ export function isPaymentsConfigured() {
  * retry after a network blip returns the SAME Razorpay order instead of
  * charging twice.
  */
-export async function createRazorpayOrder({ orderIdForReceipt, amountRupees, idempotencyKey }) {
+export async function createRazorpayOrder({ buyerId, orderIdForReceipt, amountRupees, idempotencyKey }) {
   const client = getClient();
   if (!client) {
     throw AppError.badRequest(
@@ -31,14 +31,49 @@ export async function createRazorpayOrder({ orderIdForReceipt, amountRupees, ide
   }
 
   const existing = idempotencyKey ? await paymentRepo.getPaymentByIdempotencyKey(idempotencyKey) : null;
-  if (existing) return existing;
+  if (existing && existing.razorpay_order_id) {
+    return { razorpay_order_id: existing.razorpay_order_id, amount: Number(existing.amount) };
+  }
 
   const rpOrder = await client.orders.create({
     amount: Math.round(amountRupees * 100), // Razorpay amounts are in paise
     currency: "INR",
     receipt: orderIdForReceipt,
   });
+
+  // Persist pending payment intent associated with the authenticated buyer
+  if (idempotencyKey) {
+    await paymentRepo.createInitialPaymentIntent({
+      buyerId,
+      razorpayOrderId: rpOrder.id,
+      amount: amountRupees,
+      idempotencyKey,
+    });
+  }
+
   return { razorpay_order_id: rpOrder.id, amount: amountRupees };
+}
+
+export async function fetchPaymentFromRazorpay(razorpayPaymentId) {
+  const client = getClient();
+  if (!client) return null;
+  try {
+    return await client.payments.fetch(razorpayPaymentId);
+  } catch (err) {
+    throw AppError.badRequest("Could not verify payment with gateway: " + (err.error?.description || err.message), "PAYMENT_GATEWAY_ERROR");
+  }
+}
+
+export async function refundViaRazorpay(razorpayPaymentId, { amountRupees, notes = {} }) {
+  const client = getClient();
+  if (!client) {
+    // If Razorpay is not configured (e.g. test environment), simulate safe audit record
+    return { id: `rfnd_sim_${Date.now()}`, status: "processed", amount: Math.round(amountRupees * 100) };
+  }
+  return client.payments.refund(razorpayPaymentId, {
+    amount: Math.round(amountRupees * 100),
+    notes,
+  });
 }
 
 /**

@@ -186,14 +186,16 @@ export async function updateVendorOrderStatus(vendorOrderId, nextStatus) {
   return { vendorOrder: { ...vo, status: nextStatus } };
 }
 
-export async function setCancelled(vendorOrderId, reason) {
-  await query("UPDATE vendor_orders SET status = 'Cancelled', cancelled_reason = :reason WHERE id = :id", { id: vendorOrderId, reason });
-  await query("INSERT INTO order_status_history (id, vendor_order_id, status) VALUES (:id, :vendorOrderId, 'Cancelled')", { id: newId(), vendorOrderId });
+export async function setCancelled(vendorOrderId, reason, connection = null) {
+  const runner = connection || { query };
+  await runner.query("UPDATE vendor_orders SET status = 'Cancelled', cancelled_reason = :reason WHERE id = :id", { id: vendorOrderId, reason });
+  await runner.query("INSERT INTO order_status_history (id, vendor_order_id, status) VALUES (:id, :vendorOrderId, 'Cancelled')", { id: newId(), vendorOrderId });
 }
 
-export async function setReturnRequested(vendorOrderId, reason) {
-  await query("UPDATE vendor_orders SET status = 'Return Requested', return_reason = :reason WHERE id = :id", { id: vendorOrderId, reason });
-  await query("INSERT INTO order_status_history (id, vendor_order_id, status) VALUES (:id, :vendorOrderId, 'Return Requested')", { id: newId(), vendorOrderId });
+export async function setReturnRequested(vendorOrderId, reason, connection = null) {
+  const runner = connection || { query };
+  await runner.query("UPDATE vendor_orders SET status = 'Return Requested', return_reason = :reason WHERE id = :id", { id: vendorOrderId, reason });
+  await runner.query("INSERT INTO order_status_history (id, vendor_order_id, status) VALUES (:id, :vendorOrderId, 'Return Requested')", { id: newId(), vendorOrderId });
 }
 
 export async function getVendorOrderRaw(vendorOrderId) {

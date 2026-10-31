@@ -4,6 +4,7 @@ import { AppError } from "../utils/AppError.js";
 import * as categoryService from "../services/categoryService.js";
 import * as productService from "../services/productService.js";
 import * as vendorService from "../services/vendorService.js";
+import { toPublicVendor } from "../repositories/vendorRepository.js";
 import * as reviewService from "../services/reviewService.js";
 
 export const listCategories = asyncHandler(async (_req, res) => {
@@ -44,13 +45,13 @@ export const getProductReviews = asyncHandler(async (req, res) => {
 
 export const listSuppliers = asyncHandler(async (req, res) => {
   const result = await vendorService.listVendors({ ...req.query, publicOnly: true, status: "Approved" });
-  sendSuccess(res, result.items, { meta: { total: result.total, page: result.page, pageSize: result.pageSize } });
+  sendSuccess(res, result.items.map(toPublicVendor), { meta: { total: result.total, page: result.page, pageSize: result.pageSize } });
 });
 
 export const getSupplier = asyncHandler(async (req, res) => {
   const vendor = await vendorService.getVendorById(req.params.id);
   if (vendor.status !== "Approved") throw AppError.notFound("Supplier not found.");
-  sendSuccess(res, vendor);
+  sendSuccess(res, toPublicVendor(vendor));
 });
 
 export const getSupplierReviews = asyncHandler(async (req, res) => {

@@ -7,6 +7,7 @@ import * as quoteService from "../services/quoteService.js";
 import * as payoutService from "../services/payoutService.js";
 import * as reviewService from "../services/reviewService.js";
 import * as notificationService from "../services/notificationService.js";
+import * as imageUploadService from "../services/imageUploadService.js";
 import { query } from "../config/db.js";
 
 export const getMe = asyncHandler(async (req, res) => sendSuccess(res, req.vendor));
@@ -16,7 +17,7 @@ export const listProducts = asyncHandler(async (req, res) => {
   const result = await productService.listVendorProducts(req.vendor.id, req.query);
   sendSuccess(res, result.items, { meta: { total: result.total, page: result.page, pageSize: result.pageSize } });
 });
-export const getProduct = asyncHandler(async (req, res) => sendSuccess(res, await productService.getProductForManagement(req.params.id)));
+export const getProduct = asyncHandler(async (req, res) => sendSuccess(res, await productService.getProductForManagement(req.params.id, req.vendor.id)));
 export const createProduct = asyncHandler(async (req, res) => sendSuccess(res, await productService.createProduct(req.vendor, req.body), { status: 201, message: "Product submitted for approval." }));
 export const updateProduct = asyncHandler(async (req, res) => sendSuccess(res, await productService.updateProduct(req.vendor.id, req.params.id, req.body)));
 export const updateStock = asyncHandler(async (req, res) => sendSuccess(res, await productService.updateStock(req.vendor.id, req.params.id, req.body.stock)));
@@ -53,3 +54,4 @@ export const getReviews = asyncHandler(async (req, res) => sendSuccess(res, awai
 export const listNotifications = asyncHandler(async (req, res) => sendSuccess(res, await notificationService.getNotificationsForUser(req.user.id)));
 export const markNotificationRead = asyncHandler(async (req, res) => sendSuccess(res, await notificationService.markNotificationRead(req.user.id, req.params.id)));
 export const markAllNotificationsRead = asyncHandler(async (req, res) => sendSuccess(res, await notificationService.markAllNotificationsRead(req.user.id)));
+export const uploadImage = asyncHandler(async (req, res) => sendSuccess(res, await imageUploadService.uploadImagePayload(req.body), { status: 201 }));

@@ -12,7 +12,7 @@ import { useAsync } from "../../hooks/useAsync.js";
 import { useAuth } from "../../hooks/useAuth.js";
 import { useToast } from "../../hooks/useToast.js";
 import { getCategories } from "../../services/categoryService.js";
-import { getProductById, createProduct, updateProduct } from "../../services/productService.js";
+import { getProductById, createProduct, updateProduct, uploadProductImage } from "../../services/productService.js";
 import { validateFields, hasErrors, required, isPositiveNumber, isNonNegativeNumber } from "../../utils/validators.js";
 import { slugify } from "../../utils/format.js";
 
@@ -54,12 +54,16 @@ export default function VendorProductForm() {
   const [form, setForm] = useState(emptyForm);
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
 
   useEffect(() => {
     if (existingProduct) {
+      const catMatch = (categories ?? []).find(
+        (c) => c.id === existingProduct.category || c.name === existingProduct.category
+      );
       setForm({
         name: existingProduct.name || "",
-        category: existingProduct.category || "",
+        category: catMatch ? catMatch.id : (existingProduct.category || ""),
         subcategory: existingProduct.subcategory || "",
         brand: existingProduct.brand || "",
         sku: existingProduct.sku || "",
@@ -77,9 +81,9 @@ export default function VendorProductForm() {
         shippingInfo: existingProduct.shippingInfo || "",
       });
     }
-  }, [existingProduct]);
+  }, [existingProduct, categories]);
 
-  const selectedCategory = (categories ?? []).find((c) => c.name === form.category);
+  const selectedCategory = (categories ?? []).find((c) => c.id === form.category || c.name === form.category);
 
   const stepValidators = {
     1: () => validateFields(form, { name: [required], category: [required], sku: [required] }),
@@ -105,10 +109,26 @@ export default function VendorProductForm() {
   const addBulkTier = () => setForm((f) => ({ ...f, bulkPricing: [...f.bulkPricing, { minQty: "", maxQty: "", price: "" }] }));
   const removeBulkTier = (index) => setForm((f) => ({ ...f, bulkPricing: f.bulkPricing.filter((_, i) => i !== index) }));
 
-  const handleImageSelect = (file) => {
+  const handleImageSelect = async (file) => {
     if (!file) return;
-    const url = URL.createObjectURL(file);
-    setForm((f) => ({ ...f, images: [...f.images, url] }));
+    if (!file.type.startsWith("image/")) {
+      show("Please select a valid image file (JPEG, PNG, WebP, GIF).", { type: "error" });
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      show("Image must be smaller than 5 MB.", { type: "error" });
+      return;
+    }
+    setUploadingImage(true);
+    try {
+      const permanentUrl = await uploadProductImage(file);
+      setForm((f) => ({ ...f, images: [...f.images, permanentUrl] }));
+      show("Image uploaded successfully.", { type: "success" });
+    } catch (err) {
+      show(err.message || "Failed to upload image.", { type: "error" });
+    } finally {
+      setUploadingImage(false);
+    }
   };
   const removeImage = (index) => setForm((f) => ({ ...f, images: f.images.filter((_, i) => i !== index) }));
 
@@ -177,7 +197,7 @@ export default function VendorProductForm() {
                 value={form.category}
                 error={errors.category}
                 onChange={(e) => setForm((f) => ({ ...f, category: e.target.value, subcategory: "" }))}
-                options={(categories ?? []).filter((c) => c.id !== "more").map((c) => c.name)}
+                options={(categories ?? []).filter((c) => c.id !== "more").map((c) => ({ value: c.id, label: c.name }))}
               />
               <Select
                 label="Subcategory"
@@ -253,10 +273,10 @@ export default function VendorProductForm() {
 
         {step === 4 && (
           <div className="flex max-w-lg flex-col gap-4">
-            <label className="flex cursor-pointer items-center justify-center gap-2 rounded-md border border-dashed border-border p-6 text-sm text-text-secondary hover:border-brand-300">
+            <label className={`flex cursor-pointer items-center justify-center gap-2 rounded-md border border-dashed border-border p-6 text-sm text-text-secondary hover:border-brand-300 ${uploadingImage ? "opacity-60 cursor-not-allowed" : ""}`}>
               <Upload className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
-              Upload product image
-              <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImageSelect(e.target.files?.[0])} />
+              {uploadingImage ? "Uploading image..." : "Upload product image"}
+              <input type="file" accept="image/*" disabled={uploadingImage} className="hidden" onChange={(e) => handleImageSelect(e.target.files?.[0])} />
             </label>
             {form.images.length > 0 && (
               <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">

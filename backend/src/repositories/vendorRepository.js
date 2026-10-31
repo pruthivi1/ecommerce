@@ -43,6 +43,36 @@ function mapVendor(row) {
   };
 }
 
+export function toPublicVendor(vendor) {
+  if (!vendor) return null;
+  return {
+    id: vendor.id,
+    slug: vendor.slug,
+    name: vendor.name,
+    businessName: vendor.businessName,
+    businessType: vendor.businessType,
+    categories: vendor.categories || [],
+    location: vendor.location,
+    verified: Boolean(vendor.verified),
+    rating: Number(vendor.rating) || 0,
+    reviewCount: vendor.reviewCount || 0,
+    yearsExperience: vendor.yearsExperience,
+    joinedDate: vendor.joinedDate,
+    image: vendor.image,
+    about: vendor.about,
+    gstNumber: vendor.gstNumber ? (vendor.gstNumber.length >= 10 ? `${vendor.gstNumber.slice(0, 7)}****${vendor.gstNumber.slice(-3)}` : "Verified") : null,
+    address: {
+      line1: vendor.address?.line1,
+      city: vendor.address?.city,
+      state: vendor.address?.state,
+      pincode: vendor.address?.pincode,
+    },
+    // Sensitive fields STRICTLY EXCLUDED:
+    // bank (accountName, accountNumber, ifsc, upi),
+    // documents, commissionRate, rejectionReason, userId
+  };
+}
+
 export async function getVendorByUserId(userId) {
   const rows = await query("SELECT * FROM vendors WHERE user_id = :userId LIMIT 1", { userId });
   return mapVendor(rows[0]);

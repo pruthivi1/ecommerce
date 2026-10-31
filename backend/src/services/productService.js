@@ -1,5 +1,4 @@
 import * as productRepo from "../repositories/productRepository.js";
-import { getVendorById } from "../repositories/vendorRepository.js";
 import { AppError } from "../utils/AppError.js";
 import { slugify } from "../utils/slugify.js";
 import { newId } from "../utils/id.js";
@@ -36,9 +35,12 @@ export async function getPublicProduct(id) {
   return { found: true, available: true, product, reason: null };
 }
 
-export async function getProductForManagement(id) {
+export async function getProductForManagement(id, vendorId = null) {
   const product = await productRepo.getProductById(id);
   if (!product) throw AppError.notFound("Product not found.");
+  if (vendorId && product.vendorId !== vendorId) {
+    throw AppError.forbidden("You can only access products belonging to your store.", "FORBIDDEN");
+  }
   return product;
 }
 

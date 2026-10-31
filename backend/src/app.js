@@ -33,8 +33,9 @@ app.use(morgan(env.isProduction ? "combined" : "dev"));
 // mounted before the JSON body parser and excluded from it below.
 app.post("/api/webhooks/razorpay", express.raw({ type: "application/json" }), paymentController.razorpayWebhook);
 
-app.use(express.json({ limit: "1mb" }));
-app.use(express.urlencoded({ extended: true, limit: "1mb" }));
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+app.use("/uploads", express.static("public/uploads"));
 
 app.get(
   "/api/health",

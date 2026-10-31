@@ -4,11 +4,12 @@ import * as cartRepo from "../repositories/cartRepository.js";
 import * as cartService from "./cartService.js";
 import * as paymentRepo from "../repositories/paymentRepository.js";
 import * as paymentService from "./paymentService.js";
-import { decrementStockIfAvailable } from "../repositories/productRepository.js";
+import { decrementStockIfAvailable, incrementStock } from "../repositories/productRepository.js";
 import { getVendorById } from "../repositories/vendorRepository.js";
 import { recordCommission } from "../repositories/commissionRepository.js";
 import { getNumberSetting } from "../repositories/settingsRepository.js";
 import { assertOwnedAddress } from "./addressService.js";
+import * as refundService from "./refundService.js";
 import { AppError } from "../utils/AppError.js";
 import { notifyVendor, notifyBuyer } from "./notificationService.js";
 
@@ -62,7 +63,7 @@ export async function listVendorOrders(vendorId, status) {
  */
 export async function checkout(buyer, { addressId, paymentMethod, razorpayOrderId, razorpayPaymentId, razorpaySignature, idempotencyKey }) {
   const existingPayment = await paymentRepo.getPaymentByIdempotencyKey(idempotencyKey);
-  if (existingPayment) {
+  if (existingPayment && existingPayment.order_id && existingPayment.status === "Successful") {
     return orderRepo.getOrderById(existingPayment.order_id);
   }
 
@@ -73,21 +74,51 @@ export async function checkout(buyer, { addressId, paymentMethod, razorpayOrderI
     throw AppError.badRequest("Your cart has issues that must be resolved before checkout.", "CART_INVALID", cartView.checkoutIssues);
   }
 
-  if (paymentService.isPaymentsConfigured()) {
+  if (paymentMethod === "Razorpay" || paymentService.isPaymentsConfigured()) {
+    if (!paymentService.isPaymentsConfigured()) {
+      throw AppError.badRequest(
+        "Payments are not configured in this environment, so an order cannot be placed. Set RAZORPAY_KEY_ID/RAZORPAY_KEY_SECRET to enable checkout.",
+        "PAYMENTS_NOT_CONFIGURED"
+      );
+    }
     if (!razorpayOrderId || !razorpayPaymentId || !razorpaySignature) {
       throw AppError.badRequest("Payment verification details are missing.", "PAYMENT_UNVERIFIED");
     }
+
     const valid = paymentService.verifyPaymentSignature({ razorpayOrderId, razorpayPaymentId, razorpaySignature });
     if (!valid) throw AppError.badRequest("Payment could not be verified.", "PAYMENT_SIGNATURE_INVALID");
-  } else {
-    throw AppError.badRequest(
-      "Payments are not configured in this environment, so an order cannot be placed. Set RAZORPAY_KEY_ID/RAZORPAY_KEY_SECRET to enable checkout.",
-      "PAYMENTS_NOT_CONFIGURED"
-    );
+
+    // Prevent payment reuse
+    const usedPayment = await paymentRepo.getPaymentByRazorpayPaymentId(razorpayPaymentId);
+    if (usedPayment && usedPayment.order_id) {
+      throw AppError.conflict("This payment has already been used for an order.", "PAYMENT_ALREADY_USED");
+    }
+
+    // Verify ownership of the Razorpay order
+    const initialPayment = await paymentRepo.getPaymentByRazorpayOrderId(razorpayOrderId);
+    if (initialPayment && initialPayment.buyer_id && initialPayment.buyer_id !== buyer.id) {
+      throw AppError.forbidden("Payment attempt does not belong to your account.", "PAYMENT_USER_MISMATCH");
+    }
+
+    // Verify payment amount and captured status with Razorpay
+    const rpPayment = await paymentService.fetchPaymentFromRazorpay(razorpayPaymentId);
+    if (rpPayment) {
+      if (rpPayment.order_id !== razorpayOrderId) {
+        throw AppError.badRequest("Payment does not match the active checkout order.", "PAYMENT_ORDER_MISMATCH");
+      }
+      if (!["captured", "authorized"].includes(rpPayment.status)) {
+        throw AppError.badRequest(`Payment is not in captured status (${rpPayment.status}).`, "PAYMENT_NOT_CAPTURED");
+      }
+      const expectedPaise = Math.round(cartView.totals.total * 100);
+      if (Number(rpPayment.amount) < expectedPaise) {
+        throw AppError.badRequest("Payment amount does not cover the server-calculated order total.", "PAYMENT_AMOUNT_MISMATCH");
+      }
+    }
   }
 
   const gstRate = await getNumberSetting("gst_rate");
   const shippingFeePerVendor = await getNumberSetting("shipping_fee_per_vendor");
+  const defaultCommissionRate = (await getNumberSetting("default_commission_rate")) || 0.08;
 
   const vendorGroups = cartView.vendorGroups.map((g) => ({
     vendorId: g.vendorId,
@@ -116,8 +147,9 @@ export async function checkout(buyer, { addressId, paymentMethod, razorpayOrderI
 
     await paymentRepo.createPayment(connection, {
       orderId: result.orderId,
+      buyerId: buyer.id,
       razorpayOrderId: razorpayOrderId || null,
-      amount: 0, // set below once the order total is known
+      amount: 0,
       idempotencyKey,
     });
 
@@ -129,13 +161,14 @@ export async function checkout(buyer, { addressId, paymentMethod, razorpayOrderI
   await withTransaction(async (connection) => {
     await connection.query("UPDATE payments SET amount = :amount, razorpay_payment_id = :paymentId, method = :method, status = 'Successful' WHERE order_id = :orderId", {
       amount: order.total,
-      paymentId: razorpayPaymentId,
+      paymentId: razorpayPaymentId || null,
       method: paymentMethod,
       orderId,
     });
     for (const vo of order.vendorOrders) {
       const vendor = await getVendorById(vo.vendorId);
-      await recordCommission(connection, { vendorOrderId: vo.id, vendorId: vo.vendorId, gross: vo.subtotal, commissionRate: vendor?.commission_rate ?? 0.08 });
+      const effectiveRate = Number(vendor?.commissionRate ?? vendor?.commission_rate ?? defaultCommissionRate);
+      await recordCommission(connection, { vendorOrderId: vo.id, vendorId: vo.vendorId, gross: vo.subtotal, commissionRate: effectiveRate });
     }
   });
 
@@ -172,7 +205,24 @@ export async function requestCancellation(buyerId, orderId, vendorOrderId, reaso
   if (!CANCELLABLE_STATUSES.includes(vo.status)) {
     throw AppError.badRequest(`This order can no longer be cancelled — it is already "${vo.status}".`, "NOT_CANCELLABLE");
   }
-  await orderRepo.setCancelled(vendorOrderId, reason);
+
+  await withTransaction(async (connection) => {
+    await orderRepo.setCancelled(vendorOrderId, reason, connection);
+    for (const item of vo.items || []) {
+      if (item.productId && item.qty > 0) {
+        await incrementStock(item.productId, item.qty, connection);
+      }
+    }
+  });
+
+  if (order.paymentStatus === "Successful" || order.paymentStatus === "Paid") {
+    try {
+      await refundService.createRefundFromCancellation(buyerId, orderId, vendorOrderId, reason);
+    } catch (e) {
+      console.warn("Could not create automatic refund for cancellation:", e.message);
+    }
+  }
+
   await notifyVendor(vo.vendorId, { title: "Order cancelled by buyer", body: `${vo.vendorOrderNumber}: ${reason}` });
   return getOrderForBuyer(buyerId, orderId);
 }
@@ -186,6 +236,7 @@ export async function requestReturn(buyerId, orderId, vendorOrderId, reason) {
     throw AppError.badRequest(`Returns can only be requested on delivered orders — this one is "${vo.status}".`, "NOT_RETURNABLE");
   }
   await orderRepo.setReturnRequested(vendorOrderId, reason);
+  await refundService.createRefundFromReturn(buyerId, orderId, vendorOrderId, reason);
   await notifyVendor(vo.vendorId, { title: "Return requested by buyer", body: `${vo.vendorOrderNumber}: ${reason}` });
   return getOrderForBuyer(buyerId, orderId);
 }

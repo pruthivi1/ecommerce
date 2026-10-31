@@ -21,13 +21,18 @@ export async function getPayoutById(id) {
   return rows[0] || null;
 }
 
-export async function createPayout({ vendorId, amount }) {
+export async function createPayout({ vendorId, amount }, connection = null) {
   const id = newId();
   const payoutNumber = prefixedCode("PO");
-  await query(
+  const runner = connection || { query };
+  await runner.query(
     "INSERT INTO payouts (id, payout_number, vendor_id, amount, status, requested_date) VALUES (:id, :payoutNumber, :vendorId, :amount, 'Pending', CURDATE())",
     { id, payoutNumber, vendorId, amount }
   );
+  if (connection) {
+    const [rows] = await connection.query("SELECT * FROM payouts WHERE id = :id LIMIT 1", { id });
+    return rows[0] || null;
+  }
   return getPayoutById(id);
 }
 

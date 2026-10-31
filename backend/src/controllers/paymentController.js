@@ -20,6 +20,7 @@ export const createRazorpayOrder = asyncHandler(async (req, res) => {
   if (!idempotencyKey) throw AppError.badRequest("An idempotency key is required.", "IDEMPOTENCY_KEY_REQUIRED");
 
   const result = await paymentService.createRazorpayOrder({
+    buyerId: req.user.id,
     orderIdForReceipt: idempotencyKey,
     amountRupees: cartView.totals.total,
     idempotencyKey,

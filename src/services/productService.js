@@ -60,3 +60,22 @@ export async function requestProductChanges(id, message) {
 export async function updateStock(id, stock) {
   return apiPatch(`/vendor/products/${id}/stock`, { stock });
 }
+
+export async function uploadProductImage(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        const result = await apiPost("/vendor/upload-image", {
+          image: reader.result,
+          filename: file.name,
+        });
+        resolve(result?.url || result);
+      } catch (err) {
+        reject(err);
+      }
+    };
+    reader.onerror = () => reject(new Error("Failed to read file for upload"));
+    reader.readAsDataURL(file);
+  });
+}

@@ -23,6 +23,6 @@ export async function createUser({ role, name, email, phone, passwordHash, busin
 
 export function toPublicUser(user) {
   if (!user) return null;
-  const { password_hash, ...rest } = user;
+  const { password_hash: _hash, ...rest } = user;
   return rest;
 }

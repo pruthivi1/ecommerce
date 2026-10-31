@@ -56,6 +56,33 @@ function computeProductEffectivePrice(product, qty) {
   return match ? match.price : product.price;
 }
 
+function toPublicVendor(vendor) {
+  if (!vendor) return null;
+  return {
+    id: vendor.id,
+    slug: vendor.slug,
+    name: vendor.name,
+    businessName: vendor.businessName,
+    businessType: vendor.businessType,
+    categories: vendor.categories || [],
+    location: vendor.location,
+    verified: Boolean(vendor.verified),
+    rating: Number(vendor.rating) || 0,
+    reviewCount: vendor.reviewCount || 0,
+    yearsExperience: vendor.yearsExperience,
+    joinedDate: vendor.joinedDate,
+    image: vendor.image,
+    about: vendor.about,
+    gstNumber: vendor.gstNumber ? (vendor.gstNumber.length >= 10 ? `${vendor.gstNumber.slice(0, 7)}****${vendor.gstNumber.slice(-3)}` : "Verified") : null,
+    address: {
+      line1: vendor.address?.line1,
+      city: vendor.address?.city,
+      state: vendor.address?.state,
+      pincode: vendor.address?.pincode,
+    },
+  };
+}
+
 export async function handleMockFallback(path, { method = "GET", body, query = {} } = {}) {
   // Artificial slight delay for realistic feel
   await new Promise((r) => setTimeout(r, 60));
@@ -170,6 +197,40 @@ export async function handleMockFallback(path, { method = "GET", body, query = {
     return list;
   }
 
+  // Vendor single product management with ownership enforcement
+  if (cleanPath.startsWith("/vendor/products/")) {
+    const pid = cleanPath.replace("/vendor/products/", "");
+    const user = getStorage(STORAGE_KEYS.CURRENT_USER, demoUsers.vendor);
+    const vId = user?.vendorId || "v1";
+    const p = getProductById(pid);
+    if (!p) throw new ApiError("Product not found", { status: 404 });
+    if (p.vendorId !== vId) throw new ApiError("You can only access products belonging to your store.", { status: 403, code: "FORBIDDEN" });
+    if (method === "PATCH") {
+      Object.assign(p, body);
+      return p;
+    }
+    return p;
+  }
+
+  if (cleanPath === "/vendor/products" && method === "POST") {
+    const newProd = {
+      id: `p-${Date.now()}`,
+      ...body,
+      status: "Active",
+      rating: 5.0,
+      reviewCount: 0,
+      createdAt: new Date().toISOString(),
+    };
+    products.push(newProd);
+    return newProd;
+  }
+
+  if (cleanPath === "/vendor/upload-image" && method === "POST") {
+    const { image, filename } = body || {};
+    if (!image) throw new ApiError("Image payload is required.", { status: 400 });
+    return { url: image, filename: filename || "product_img.jpg" };
+  }
+
   // Related products
   if (cleanPath.startsWith("/products/") && cleanPath.endsWith("/related")) {
     const id = cleanPath.split("/")[2];
@@ -213,6 +274,9 @@ export async function handleMockFallback(path, { method = "GET", body, query = {
       const q = (query.search || query.q).toLowerCase();
       list = list.filter((v) => v.name.toLowerCase().includes(q) || v.businessName?.toLowerCase().includes(q));
     }
+    if (cleanPath === "/suppliers") {
+      return list.map(toPublicVendor);
+    }
     return list;
   }
 
@@ -221,7 +285,7 @@ export async function handleMockFallback(path, { method = "GET", body, query = {
     const v = vendors.find((item) => item.id === id || item.slug === id);
     if (!v) throw new ApiError("Supplier not found", { status: 404 });
     const vendorProducts = products.filter((p) => p.vendorId === v.id && p.status === "Active");
-    return { ...v, products: vendorProducts };
+    return { ...toPublicVendor(v), products: vendorProducts };
   }
 
   // 5. Buyer Cart

@@ -229,6 +229,7 @@ export async function updateProduct(id, updates) {
     unit: "unit",
     moq: "moq",
     moqUnit: "moq_unit",
+    stock: "stock",
     location: "location",
     shippingInfo: "shipping_info",
     rating: "rating",
@@ -248,6 +249,32 @@ export async function updateProduct(id, updates) {
   if (sets.length) {
     await query(`UPDATE products SET ${sets.join(", ")} WHERE id = :id`, params);
   }
+
+  if (Array.isArray(updates.images)) {
+    await query("DELETE FROM product_images WHERE product_id = :id", { id });
+    for (const [index, url] of updates.images.entries()) {
+      await query("INSERT INTO product_images (id, product_id, url, sort_order) VALUES (:imgId, :productId, :url, :sortOrder)", {
+        imgId: newId(),
+        productId: id,
+        url,
+        sortOrder: index,
+      });
+    }
+  }
+
+  if (Array.isArray(updates.bulkPricing)) {
+    await query("DELETE FROM product_pricing_tiers WHERE product_id = :id", { id });
+    for (const tier of updates.bulkPricing) {
+      await query("INSERT INTO product_pricing_tiers (id, product_id, min_qty, max_qty, price) VALUES (:tierId, :productId, :minQty, :maxQty, :price)", {
+        tierId: newId(),
+        productId: id,
+        minQty: tier.minQty,
+        maxQty: tier.maxQty ?? null,
+        price: tier.price,
+      });
+    }
+  }
+
   return getProductById(id);
 }
 
@@ -274,6 +301,21 @@ export async function decrementStockIfAvailable(id, qty, connection) {
     { id, qty }
   );
   return result.affectedRows > 0;
+}
+
+/**
+ * Atomically increments stock upon order cancellation, and restores status to Active
+ * if it was previously Out of Stock.
+ */
+export async function incrementStock(id, qty, connection = null) {
+  const q = `UPDATE products SET stock = stock + :qty,
+      status = CASE WHEN status = 'Out of Stock' THEN 'Active' ELSE status END
+    WHERE id = :id`;
+  if (connection) {
+    await connection.query(q, { id, qty });
+  } else {
+    await query(q, { id, qty });
+  }
 }
 
 export async function updateStock(id, stock) {
