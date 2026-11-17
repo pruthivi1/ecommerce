@@ -1,13 +1,21 @@
 {
-  "name": "srikanth",
+  "name": "marketbridge",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:all": "node scripts/start-dev.js",
     "build": "vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:security": "node test_security_suite.js",
+    "test:e2e": "node test_e2e.js",
+    "test": "node test_security_suite.js && node test_e2e.js",
+    "db:migrate": "npm --prefix backend run migrate",
+    "db:seed": "npm --prefix backend run seed",
+    "db:reset": "npm --prefix backend run db:reset"
   },
   "dependencies": {
     "lucide-react": "^1.48.0",

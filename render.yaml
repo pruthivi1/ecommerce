@@ -1,0 +1,52 @@
+services:
+  # MarketBridge Backend API Service
+  - type: web
+    name: marketbridge-api
+    runtime: node
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: node src/server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 4000
+      - key: DATABASE_HOST
+        sync: false
+      - key: DATABASE_PORT
+        value: "3306"
+      - key: DATABASE_NAME
+        value: marketbridge
+      - key: DATABASE_USER
+        sync: false
+      - key: DATABASE_PASSWORD
+        sync: false
+      - key: DATABASE_SSL
+        value: "true"
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 7d
+      - key: FRONTEND_URL
+        sync: false
+      - key: ALLOW_DEMO_LOGIN
+        value: "true"
+      - key: DEFAULT_GST_RATE
+        value: "0.18"
+      - key: DEFAULT_COMMISSION_RATE
+        value: "0.08"
+      - key: SHIPPING_FEE_PER_VENDOR
+        value: "300"
+
+  # MarketBridge Frontend Static Site
+  - type: staticSite
+    name: marketbridge-frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_BASE_URL
+        sync: false
